@@ -3,7 +3,8 @@
 import logging
 import sys
 import time
-import urllib2
+import urllib.request
+import urllib.parse
 import yaml
 
 from multiprocessing.pool import ThreadPool as Pool
@@ -37,12 +38,13 @@ class G2ZProxy(object):
     """
 
     def __init__(self, pattern='graphite*',
-                zabbix_url='http://localhost',
-                zabbix_user='admin',
-                zabbix_pass='zabbix',
-                graphite_url='http://localhost',
-                threads=1,
-                aggregation_function='{metric}'):
+                 zabbix_url='http://localhost',
+                 zabbix_user='admin',
+                 zabbix_pass='zabbix',
+                 graphite_url='http://localhost',
+                 threads=1,
+                 aggregation_function='{metric}',
+                 hostname_munger=lambda x: x):
 
         self.cn = self.__class__.__name__
 
@@ -71,7 +73,7 @@ class G2ZProxy(object):
 
         hosts = {}
         for m in hostids:
-            hosts.update({ int(m['hostid']): m['name'] })
+            hosts.update({ int(m['hostid']): self.hostname_munger(m['name']) })
 
         logger.debug("{0}:_getHostsFromMetrics(metrics):{1}".format(self.__class__.__name__, hosts))
 
@@ -142,7 +144,7 @@ class G2ZProxy(object):
 
         req = req.format(host=metric['host'], metric=metric['metric'])
         req = self.aggregation_function.format(metric=req)
-        req = urllib2.quote(req)
+        req = urllib.parse.quote(req)
 
         result = self.graphite_url.format(req=req)
         logger.debug("{0}:_getGraphiteData(): url:{1}".format(self.__class__.__name__, result))
@@ -161,17 +163,17 @@ class G2ZProxy(object):
             s_time = time.time()
             try:
                 # Get data from graphite API
-                res = urllib2.urlopen(url)
+                res = urllib.request.urlopen(url)
                 data = yaml.load(res)
             except Exception as e:
                 # if error, process next metric and print exception
-		logger.error('%s', e)
+                logger.error('%s', e)
                 return #continue
             finally:
                 e_time = time.time() - s_time
                 # Convert to milliseconds
                 e_time = int(e_time * 1000)
-                print "{url} {time}ms".format(time=e_time, url=url)
+                print("{url} {time}ms".format(time=e_time, url=url))
 
             logger.debug("{0}:_getGraphiteData(): data:{1}\n".format(self.__class__.__name__, data))
             # Process data if it not empty
@@ -183,7 +185,7 @@ class G2ZProxy(object):
                     # We are only interested in latest datapoint
                     data = datapoints[-1]
                     # Update metric record
-		    logger.debug({'value': data[0], 'time': data[1] })
+                    logger.debug({'value': data[0], 'time': data[1] })
                     metric.update({ 'value': data[0], 'time': data[1] })
 
         pool = Pool(processes=self.threads)
@@ -219,6 +221,11 @@ class G2ZProxy(object):
 
 if __name__ == '__main__':
 
+    # define mungers for hostnames
+    hostname_mungers = dict([
+        ('hostname_default', lambda x: x),
+        ('hostname_only',    lambda x: x.split(".")[0])
+    ])
     argparser = argparse.ArgumentParser(description="Graphite to Zabbix proxy",
             prog="g2zproxy")
 
@@ -231,6 +238,7 @@ if __name__ == '__main__':
             help='Specify zabbix password.')
     argparser.add_argument('-g', '--graphite-url', default='http://localhost',
             help='Specify URL to Graphite.')
+    argparser.add_argument('-n', '--hostname-only', action='store_const', default='hostname_default', const='hostname_only', help='Set to have all but the first dot-separated token stripped', dest='hostname_munger')
     argparser.add_argument('-t', '--threads', default=50, type=int,
             help='Number threads to get simultaneously requests to Graphite')
     argparser.add_argument('-a', '--aggregation-function', default='timeShift(movingAverage({metric}, "5min"), "+150sec")',
@@ -243,9 +251,15 @@ if __name__ == '__main__':
         argparser.print_help()
         exit()
 
-    G2ZProxy(zabbix_url = args.zabbix_url,
-            zabbix_user = args.zabbix_user,
-            zabbix_pass = args.zabbix_pass,
-            graphite_url = args.graphite_url,
-            threads = args.threads,
-            aggregation_function = args.aggregation_function)
+    example_host = 'somehost.example.com'
+
+    print("example hostname: {0}".format(example_host))
+    print("          munged: {0}".format(hostname_mungers[args.hostname_munger](example_host)))
+
+    # G2ZProxy(zabbix_url = args.zabbix_url,
+    #          zabbix_user = args.zabbix_user,
+    #          zabbix_pass = args.zabbix_pass,
+    #          graphite_url = args.graphite_url,
+    #          threads = args.threads,
+    #          aggregation_function = args.aggregation_function,
+    #          hostname_munger = args.hostname_munger)
