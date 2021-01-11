@@ -53,6 +53,7 @@ class G2ZProxy(object):
         self.zabbix_url = zabbix_url
         self.graphite_url = graphite_url + '/render?from=-5minutes&rawData=true&target={req}&format=json'
         self.aggregation_function = aggregation_function
+        self.hostname_munger = hostname_munger
         self.zapi = ZabbixAPI(self.zabbix_url, user=zabbix_user, password=zabbix_pass)
         self.threads = threads
         self._main()
@@ -111,14 +112,19 @@ class G2ZProxy(object):
         key_len = len(self.key)
 
         def metrics_filter(m):
+            metric_pattern = metric = m['key_'][key_len + 1:-1]
+            if not '{h}' in metric_pattern:
+                metric_pattern = '{h}.'+metric_pattern
+            host = hosts[int(m['hostid'])]
             return {
-                'host': hosts[int(m['hostid'])],
-                'metric': m['key_'][key_len + 1:-1],
+                'host': host,
+                'metric': metric,
+                'metric_pattern': metric_pattern
             }
 
         # Input:    [ {'key_':'graphite[value]', 'hostid': '1', 'other': ... }, ... ]
         # Output:   [ {'host': 'localhost', 'metric':'value'}, ... ]
-        result = map(metrics_filter, metrics)
+        result = list( map(metrics_filter, metrics) )
 
         logger.debug("{0}:_getMonitored():{1}".format(self.__class__.__name__, result))
         return result
@@ -134,15 +140,12 @@ class G2ZProxy(object):
 
         result = None
 
-        params = map(lambda x: x.strip(), metric['metric'].split(';'))
+        params = list( map(lambda x: x.strip(), metric['metric_pattern'].split(';')) )
 
+        req = params[0].format(h=metric['host'])
         if len(params) > 1:
-            req_metric = '{0}.{1}'.format(metric['host'], params[0])
-            req = params[1].format(metric=req_metric)
-        else:
-            req = '{host}.{metric}'
+            req = params[1].format(metric=req)
 
-        req = req.format(host=metric['host'], metric=metric['metric'])
         req = self.aggregation_function.format(metric=req)
         req = urllib.parse.quote(req)
 
@@ -178,11 +181,11 @@ class G2ZProxy(object):
             logger.debug("{0}:_getGraphiteData(): data:{1}\n".format(self.__class__.__name__, data))
             # Process data if it not empty
             if len(data) and 'datapoints' in data[0]:
-                datapoints = filter(lambda d: d[0] != None, data[0]['datapoints'])
+                datapoints = list( filter( lambda d: d[0] != None, data[0]['datapoints'] ))
                 logger.debug("{0}:_getGraphiteData(): filter(datapoints):{1}".format(self.__class__.__name__, datapoints))
 
                 if datapoints:
-                    # We are only interested in latest datapoint
+                    # We are only interested in latest datapoint # TODO
                     data = datapoints[-1]
                     # Update metric record
                     logger.debug({'value': data[0], 'time': data[1] })
@@ -215,6 +218,7 @@ class G2ZProxy(object):
             if 'value' in m:
                 metric = '{0}[{1}]'.format(self.key, m['metric'])
                 msg.append(ZabbixMetric(m['host'], metric, m['value'], m['time']))
+                print('{t} {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
 
         ZabbixSender(use_config=True).send(msg)
         print(len(self.metrics))
@@ -241,8 +245,10 @@ if __name__ == '__main__':
     argparser.add_argument('-n', '--hostname-only', action='store_const', default='hostname_default', const='hostname_only', help='Set to have all but the first dot-separated token stripped', dest='hostname_munger')
     argparser.add_argument('-t', '--threads', default=50, type=int,
             help='Number threads to get simultaneously requests to Graphite')
-    argparser.add_argument('-a', '--aggregation-function', default='timeShift(movingAverage({metric}, "5min"), "+150sec")',
-            help='Aggregation function')
+    argparser.add_argument('-a', '--aggregation-function', default='{metric}',
+            help='Aggregation function.  Example: timeShift(movingAverage({metric}, "5min"), "+150sec")')
+    # argparser.add_argument('-a', '--aggregation-function', default='timeShift(movingAverage({metric}, "5min"), "+150sec")',
+    #         help='Aggregation function')
 
     args = argparser.parse_args()
 
@@ -251,15 +257,15 @@ if __name__ == '__main__':
         argparser.print_help()
         exit()
 
-    example_host = 'somehost.example.com'
+    # example_host = 'somehost.example.com'
 
-    print("example hostname: {0}".format(example_host))
-    print("          munged: {0}".format(hostname_mungers[args.hostname_munger](example_host)))
+    # print("example hostname: {0}".format(example_host))
+    # print("          munged: {0}".format(hostname_mungers[args.hostname_munger](example_host)))
 
-    # G2ZProxy(zabbix_url = args.zabbix_url,
-    #          zabbix_user = args.zabbix_user,
-    #          zabbix_pass = args.zabbix_pass,
-    #          graphite_url = args.graphite_url,
-    #          threads = args.threads,
-    #          aggregation_function = args.aggregation_function,
-    #          hostname_munger = args.hostname_munger)
+    G2ZProxy(zabbix_url = args.zabbix_url,
+             zabbix_user = args.zabbix_user,
+             zabbix_pass = args.zabbix_pass,
+             graphite_url = args.graphite_url,
+             threads = args.threads,
+             aggregation_function = args.aggregation_function,
+             hostname_munger = hostname_mungers[ args.hostname_munger ])
