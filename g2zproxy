@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 
+### Dependencies: urllib, py-zabbix, yaml
+
 import logging
 import sys
 import time
 import urllib.request
 import urllib.parse
 import yaml
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
 
 from multiprocessing.pool import ThreadPool as Pool
 
@@ -44,7 +48,8 @@ class G2ZProxy(object):
                  graphite_url='http://localhost',
                  threads=1,
                  aggregation_function='{metric}',
-                 hostname_munger=lambda x: x):
+                 hostname_munger=lambda x: x,
+                 debug_mode=False):
 
         self.cn = self.__class__.__name__
 
@@ -56,7 +61,12 @@ class G2ZProxy(object):
         self.hostname_munger = hostname_munger
         self.zapi = ZabbixAPI(self.zabbix_url, user=zabbix_user, password=zabbix_pass)
         self.threads = threads
+        self.debug_mode = debug_mode
         self._main()
+
+    def _debugOutput(self, msg):
+        logger.debug("{0}: outputting datastructure instead of sending to Zabbix".format(self.__class__.__name__))
+        logger.debug(pp.pformat(msg))
 
     def _getHostsFromMetrics(self, metrics):
         """
@@ -167,7 +177,7 @@ class G2ZProxy(object):
             try:
                 # Get data from graphite API
                 res = urllib.request.urlopen(url)
-                data = yaml.load(res)
+                data = yaml.load(res, Loader=yaml.FullLoader)
             except Exception as e:
                 # if error, process next metric and print exception
                 logger.error('%s', e)
@@ -176,7 +186,7 @@ class G2ZProxy(object):
                 e_time = time.time() - s_time
                 # Convert to milliseconds
                 e_time = int(e_time * 1000)
-                print("{url} {time}ms".format(time=e_time, url=url))
+                logger.debug("{cn}:_getGraphiteData(): urlopen time {time}ms for {url}".format(cn=self.__class__.__name__, time=e_time, url=url))
 
             logger.debug("{0}:_getGraphiteData(): data:{1}\n".format(self.__class__.__name__, data))
             # Process data if it not empty
@@ -185,7 +195,7 @@ class G2ZProxy(object):
                 logger.debug("{0}:_getGraphiteData(): filter(datapoints):{1}".format(self.__class__.__name__, datapoints))
 
                 if datapoints:
-                    # We are only interested in latest datapoint # TODO
+                    # We are only interested in latest datapoint
                     data = datapoints[-1]
                     # Update metric record
                     logger.debug({'value': data[0], 'time': data[1] })
@@ -218,9 +228,13 @@ class G2ZProxy(object):
             if 'value' in m:
                 metric = '{0}[{1}]'.format(self.key, m['metric'])
                 msg.append(ZabbixMetric(m['host'], metric, m['value'], m['time']))
-                print('{t} {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
+                if self.debug_mode:
+                    print('DEBUG: {t} {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
 
-        ZabbixSender(use_config=True).send(msg)
+        if self.debug_mode:
+            self._debugOutput(msg)
+        else:
+            ZabbixSender(use_config=True).send(msg)
         print(len(self.metrics))
 
 if __name__ == '__main__':
@@ -234,6 +248,7 @@ if __name__ == '__main__':
             prog="g2zproxy")
 
     argparser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2')
+    argparser.add_argument('-d', '--debug', action='store_true', help='In debug mode, no data is inserted in Zabbix; it is printed out instead.')
     argparser.add_argument('-z', '--zabbix-url', default='http://localhost',
             help='Specify URL to Zabbix.')
     argparser.add_argument('-zu', '--zabbix-user', default='admin',
@@ -268,4 +283,5 @@ if __name__ == '__main__':
              graphite_url = args.graphite_url,
              threads = args.threads,
              aggregation_function = args.aggregation_function,
-             hostname_munger = hostname_mungers[ args.hostname_munger ])
+             hostname_munger = hostname_mungers[ args.hostname_munger ],
+             debug_mode = args.debug)
