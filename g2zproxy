@@ -45,6 +45,7 @@ class G2ZProxy(object):
                  zabbix_url='http://localhost',
                  zabbix_user='admin',
                  zabbix_pass='zabbix',
+                 zabbix_sender_config={'use_config': True},
                  graphite_url='http://localhost',
                  threads=1,
                  aggregation_function='{metric}',
@@ -62,6 +63,7 @@ class G2ZProxy(object):
         self.zapi = ZabbixAPI(self.zabbix_url, user=zabbix_user, password=zabbix_pass)
         self.threads = threads
         self.debug_mode = debug_mode
+        self.zabbix_sender_config = zabbix_sender_config  # TODO finish fleshing this out
         self._main()
 
     def _debugOutput(self, msg):
