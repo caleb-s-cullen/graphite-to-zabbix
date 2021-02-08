@@ -234,7 +234,8 @@ class G2ZProxy(object):
         if self.debug_mode:
             self._debugOutput(msg)
         else:
-            ZabbixSender(use_config=True).send(msg)
+            # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
+            ZabbixSender(zabbix_server='10.12.192.81').send(msg) # the IP of the Zabbix server (could also use a proxy)
         print(len(self.metrics))
 
 if __name__ == '__main__':
