@@ -9,7 +9,6 @@ import urllib.request
 import urllib.parse
 import yaml
 import pprint
-pp = pprint.PrettyPrinter(indent=4)
 
 from multiprocessing.pool import ThreadPool as Pool
 
@@ -68,7 +67,7 @@ class G2ZProxy(object):
 
     def _debugOutput(self, msg):
         logger.debug("{0}: outputting datastructure instead of sending to Zabbix".format(self.__class__.__name__))
-        logger.debug(pp.pformat(msg))
+        logger.debug(pprint.pformat(msg))
 
     def _getHostsFromMetrics(self, metrics):
         """
