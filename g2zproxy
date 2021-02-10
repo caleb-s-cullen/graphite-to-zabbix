@@ -46,7 +46,8 @@ class G2ZProxy(object):
                  zabbix_url='http://localhost',
                  zabbix_user='admin',
                  zabbix_pass='zabbix',
-                 zabbix_sender_config={'use_config': True},
+                 zabbix_server=None,
+                 zabbix_port=None,
                  graphite_url='http://localhost',
                  threads=1,
                  aggregation_function='{metric}',
@@ -64,7 +65,12 @@ class G2ZProxy(object):
         self.zapi = ZabbixAPI(self.zabbix_url, user=zabbix_user, password=zabbix_pass)
         self.threads = threads
         self.debug_mode = debug_mode
-        self.zabbix_sender_config = zabbix_sender_config  # TODO finish fleshing this out
+        if zabbix_server is not None:
+            self.zabbix_sender_config = { 'zabbix_server': zabbix_server }
+            if zabbix_port is not None:
+                self.zabbix_sender_config['zabbix_port'] = zabbix_port
+        else:
+            self.zabbix_sender_config = { 'use_config' = True }
         self._main()
 
     def _debugOutput(self, msg):
@@ -239,7 +245,7 @@ class G2ZProxy(object):
             self._debugOutput(msg)
         else:
             # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
-            ZabbixSender(zabbix_server='10.12.192.81').send(msg) # the IP of the Zabbix server (could also use a proxy)
+            ZabbixSender(**self.zabbix_sender_config).send(msg) # we can configure this from the cmdline
         print(len(self.metrics))
 
 if __name__ == '__main__':
@@ -260,6 +266,8 @@ if __name__ == '__main__':
             help='Specify zabbix user.')
     argparser.add_argument('-zp', '--zabbix-pass', default='zabbix',
             help='Specify zabbix password.')
+    argparser.add_argument('-zs', '--zabbix-server', default=None, help='Specify Zabbix server IP')
+    arpparser.add_argument('-zr', '--zabbix-port', default=None, help='Specify Zabbix server trapper port')
     argparser.add_argument('-g', '--graphite-url', default='http://localhost',
             help='Specify URL to Graphite.')
     argparser.add_argument('-n', '--hostname-only', action='store_const', default='hostname_default', const='hostname_only', help='Set to have all but the first dot-separated token stripped', dest='hostname_munger')
@@ -285,6 +293,8 @@ if __name__ == '__main__':
     G2ZProxy(zabbix_url = args.zabbix_url,
              zabbix_user = args.zabbix_user,
              zabbix_pass = args.zabbix_pass,
+             zabbix_server = args.zabbix_server,
+             zabbix_port = args.zabbix_port,
              graphite_url = args.graphite_url,
              threads = args.threads,
              aggregation_function = args.aggregation_function,
