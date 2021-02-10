@@ -52,7 +52,7 @@ class JSONMetricsSorter(collections.abc.Mapping):
 
     # provide __repr__ for string representation
     def __repr__(self):
-        return f"{self._classname()}: metric_key: {self.metric_key} data: {self.data}"
+        return f"{self.__class__.__name__}: metric_key: {self.metric_key} data: {self.data}"
 
     # provide __sizeof__
     def __sizeof__(self):
@@ -81,7 +81,7 @@ class JSONMetricsSorter(collections.abc.Mapping):
 
     # return a list of ZabbixMetric objects, one for each host referenced
     def get_all_metrics(self):
-        return [ ZabbixMetric( host, self.metric_key, json_dumps( metrics )) for host,metrics in self.data.items() ]
+        return [ ZabbixMetric( host, self.metric_key, json.dumps( metrics )) for host,metrics in self.data.items() ]
 
     # insert another metric value for a particular host into the sorter
     def add_metric_for(self, host, keyname, value):
@@ -298,15 +298,15 @@ class G2ZProxy(object):
         for m in self.metrics:
             if 'value' in m:
                 metric = '{0}[{1}]'.format(self.key, m['metric'])
-                self.json_sorter.add_metric_for(m['host'], metric, m['value'], m['time'])
+                self.json_sorter.add_metric_for(m['host'], metric, m['value'])
                 if self.debug_mode:
-                    print('DEBUG: {t} {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
+                    print('DEBUG: ({t}) {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
 
         if self.debug_mode:
             self._debugOutput(msg)
         else:
             # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
-            ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics) # we can configure this from the cmdline
+            ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics()) # we can configure this from the cmdline
         print(len(self.metrics))
 
 if __name__ == '__main__':
