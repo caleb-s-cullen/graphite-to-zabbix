@@ -19,10 +19,12 @@ except:
     exit()
 
 try:
-    from zabbix.api import ZabbixAPI
-    from zabbix.sender import ZabbixSender, ZabbixMetric
+    # from zabbix.api import ZabbixAPI
+    from pyzabbix.api import ZabbixAPI
+    # from zabbix.sender import ZabbixSender, ZabbixMetric
+    from pyzabbix.sender import ZabbixSender, ZabbixMetric
 except:
-    print("Zabbix module is require.")
+    print("Zabbix module py-zabbix is required.")
     exit()
 
 logging.basicConfig(level = logging.DEBUG, format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
@@ -237,7 +239,7 @@ class G2ZProxy(object):
             self._debugOutput(msg)
         else:
             # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
-            ZabbixSender(zabbix_server='10.12.192.91').send(msg) # the IP of the Zabbix server (could also use a proxy)
+            ZabbixSender(zabbix_server='10.12.192.81').send(msg) # the IP of the Zabbix server (could also use a proxy)
         print(len(self.metrics))
 
 if __name__ == '__main__':
