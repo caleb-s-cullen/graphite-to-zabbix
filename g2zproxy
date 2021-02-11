@@ -126,7 +126,7 @@ class G2ZProxy(object):
         self.zabbix_url = zabbix_url
         self.graphite_url = graphite_url + '/render?from=-5minutes&rawData=true&target={req}&format=json'
         self.aggregation_function = aggregation_function
-        self.hostname_munger = hostname_munger
+        self._getHostnameForGraphite = hostname_munger
         self.zapi = ZabbixAPI(self.zabbix_url, user=zabbix_user, password=zabbix_pass)
         self.threads = threads
         self.debug_mode = debug_mode
@@ -160,7 +160,7 @@ class G2ZProxy(object):
 
         hosts = {}
         for m in hostids:
-            hosts.update({ int(m['hostid']): self.hostname_munger(m['name']) })
+            hosts.update({ int(m['hostid']): m['name'] })
 
         logger.debug("{0}:_getHostsFromMetrics(metrics):{1}".format(self.__class__.__name__, hosts))
 
@@ -201,7 +201,7 @@ class G2ZProxy(object):
             metric_pattern = metric = m['key_'][key_len + 1:-1]
             if not '{h}' in metric_pattern:
                 metric_pattern = '{h}.'+metric_pattern
-            host = hosts[int(m['hostid'])]
+            host = hosts[ int(m['hostid']) ]
             return {
                 'host': host,
                 'metric': metric,
@@ -228,7 +228,7 @@ class G2ZProxy(object):
 
         params = list( map(lambda x: x.strip(), metric['metric_pattern'].split(';')) )
 
-        req = params[0].format(h=metric['host'])
+        req = params[0].format( h=self._getHostnameForGraphite( metric['host'] ))
         if len(params) > 1:
             req = params[1].format(metric=req)
 
