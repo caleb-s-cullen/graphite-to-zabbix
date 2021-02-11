@@ -141,8 +141,11 @@ class G2ZProxy(object):
 
     def _debugOutput(self, msg):
         logger.debug("{0}: outputting datastructure instead of sending to Zabbix".format(self.__class__.__name__))
-        logger.debug(pprint.pformat(self.json_sorter))
-        logger.debug(self.json_sorter.get_all_metrics())
+        if len(msg) == 0:
+            logger.debug(pprint.pformat(self.json_sorter))
+            logger.debug(self.json_sorter.get_all_metrics())
+        else:
+            logger.debug(pprint.pformat(msg))
 
     def _getHostsFromMetrics(self, metrics):
         """
@@ -303,7 +306,8 @@ class G2ZProxy(object):
         for m in self.metrics:
             if 'value' in m:
                 metric = '{0}[{1}]'.format(self.key, m['metric'])
-                self.json_sorter.add_metric_for(m['host'], metric, m['value'])
+                # self.json_sorter.add_metric_for(m['host'], metric, m['value'])
+                msg.append( ZabbixMetric(m['host'], metric, m['value'], m['time']) )
                 if self.debug_mode:
                     print('DEBUG: ({t}) {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
 
@@ -312,7 +316,8 @@ class G2ZProxy(object):
             self._debugOutput(msg)
         else:
             # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
-            result = ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics()) # we can configure this from the cmdline
+            # result = ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics()) # we can configure this from the cmdline
+            result = ZabbixSender(**self.zabbix_sender_config).send(msg)
             logger.debug("{cn}:_main: Sender result: {r}".format(cn=self.__class__.__name__, r=result))
 
 if __name__ == '__main__':
