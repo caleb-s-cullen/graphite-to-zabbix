@@ -53,9 +53,9 @@ class JSONMetricsSorter(collections.abc.Mapping):
             for name in hostnames:
                 self.data[name] = {}
 
-    # provide __repr__ for string representation
+    # provide __repr__ for string representation -- f"" strings not available until v3.6
     def __repr__(self):
-        return f"{self.__class__.__name__}: metric_key: {self.metric_key} data: {self.data}"
+        return "{cn}: metric_key: {k} data: {d}".format(cn=self.__class__.__name__,k=self.metric_key,d=self.data)
 
     # provide __sizeof__
     def __sizeof__(self):
