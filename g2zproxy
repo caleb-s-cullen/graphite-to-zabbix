@@ -308,11 +308,12 @@ class G2ZProxy(object):
                     print('DEBUG: ({t}) {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
 
         if self.debug_mode:
+            print('DEBUG: number of metrics is {}'.format(len(self.metrics)))
             self._debugOutput(msg)
         else:
             # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
-            ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics()) # we can configure this from the cmdline
-        print(len(self.metrics))
+            result = ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics()) # we can configure this from the cmdline
+            logger.debug("{cn}:_main: Sender result: {r}".format(cn=self.__class__.__name__, r=result))
 
 if __name__ == '__main__':
 
