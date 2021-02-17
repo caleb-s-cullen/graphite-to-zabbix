@@ -59,10 +59,6 @@ class JSONMetricsSorter(collections.abc.Mapping):
     def __repr__(self):
         return "{cn}: metric_key: {k} data: {d}".format(cn=self.__class__.__name__,k=self.metric_key,d=self.data)
 
-    # provide __sizeof__
-    def __sizeof__(self):
-        return self.data.__sizeof__() + self.metric_key.__sizeof__()
-
     # Provide certain private definitions for Mapping conformance
     def __len__(self):
         return len(self.data)
@@ -94,6 +90,59 @@ class JSONMetricsSorter(collections.abc.Mapping):
             self.data[host] = {}
         self.data[host][keyname] = value
         return self
+
+class MetricsSorterByProxy(collections.abc.Mapping):
+    """
+    Creating a second class very similar to the previous class, this time to collect metrics on the
+    basis of which proxy they need to go to, so that they can be sent only to proxies which know to
+    expect metrics for the included hosts.
+
+    """
+    def __init__(self, *proxynames, **kwargs):
+        self.data = {}
+        if len(proxynames) > 0:
+            for name in proxynames:
+                self.data[name] = [] # we create a list for each proxy, of metrics which need to be sent
+
+    # provide a representation
+    def __repr__(self):
+        return "{cn}: data: {d}".format(cn=self.__class__.__name__, d=self.data)
+
+    # Provide certain private definitions for Mapping conformance
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        yield from self.data
+
+    def __getitem__(self, proxy):
+        return self.data[proxy]
+
+    def __not_imp_error(self):
+        funcname = sys._getframe(1).f_code.co_name
+        raise NotImplementedError('{} is not implemented by {}'.format(funcname, self.__class__.__name__))
+
+    def get_all_metrics(self):
+        self.__not_imp_error()
+
+    def add_metric_for(self, host, keyname, value):
+        self.__not_imp_error()
+
+    def get_zabbix_metric_key(self, host, keyname, value):
+        self.__not_imp_error()
+
+
+    def add_metric(self, metric, keyname, value, time):
+        if metric['proxy'] not in self.data:
+            self.data[ metric['proxy'] ] = []
+        self.data[ metric['proxy'] ].append( ZabbixMetric(metric['host'], keyname, value, time) )
+
+    def get_metrics_for(self, proxy):
+        return self.data[proxy]
+
+    def get_proxies(self):
+        return list(self.keys())
+
 
 class G2ZProxyException(Exception):
     pass
@@ -130,20 +179,20 @@ class G2ZProxy(object):
         self.zapi = ZabbixAPI(self.zabbix_url, user=zabbix_user, password=zabbix_pass)
         self.threads = threads
         self.debug_mode = debug_mode
-        self.json_sorter = JSONMetricsSorter()
+        self.proxy_sorter = MetricsSorterByProxy()
         if zabbix_server is not None:
-            self.zabbix_sender_config = { 'zabbix_server': zabbix_server }
+            zabconf = { 'zabbix_server': zabbix_server }
             if zabbix_port is not None:
-                self.zabbix_sender_config['zabbix_port'] = zabbix_port
+                zabconf['zabbix_port'] = zabbix_port
+            self.zabbix_sender_config = lambda x: zabconf
         else:
-            self.zabbix_sender_config = { 'use_config':  True }
+            self.zabbix_sender_config = lambda x: x # we need to provide zabbix_server
         self._main()
 
     def _debugOutput(self, msg):
         logger.debug("{0}: outputting datastructure instead of sending to Zabbix".format(self.__class__.__name__))
         if len(msg) == 0:
-            logger.debug(pprint.pformat(self.json_sorter))
-            logger.debug(self.json_sorter.get_all_metrics())
+            logger.debug(pprint.pformat(self.proxy_sorter))
         else:
             logger.debug(pprint.pformat(msg))
 
@@ -159,11 +208,21 @@ class G2ZProxy(object):
         hostids = list(set(map(lambda x: int(x['hostid']), metrics)))
 
         # Get host names by id
-        hostids = self.zapi.host.get(hostids=hostids, output=['name'])
+        hostids = self.zapi.host.get(hostids=hostids, output=['name', 'proxy_hostid'])
+
+        # Get list of unique proxy ids
+        proxies = list(set(map(lambda x: int(x['proxy_hostid']), hostids)))
+
+        # Get list of proxy data
+        proxies = self.zapi.proxy.get( proxyids=proxies, output=['proxy_address'] )
+
+        # Map proxyid (string) onto its name, in order to create host->proxy mapping; no need to
+        #   convert type as they are strings in both data structures
+        proxymap = { p['proxyid']: p['proxy_address'] for p in proxies }
 
         hosts = {}
-        for m in hostids:
-            hosts.update({ int(m['hostid']): m['name'] })
+        for m in hostids: # we now pass back a dict w/ name and proxy keys as the value, instead of a string
+            hosts.update({ int(m['hostid']): { 'name': m['name'], 'proxy': proxymap[m['proxy_hostid']] }  })
 
         logger.debug("{0}:_getHostsFromMetrics(metrics):{1}".format(self.__class__.__name__, hosts))
 
@@ -194,7 +253,7 @@ class G2ZProxy(object):
 
         result = None
         metrics = self._getMonitoredMetrics()
-        hosts = self._getHostsFromMetrics(metrics)
+        hosts = self._getHostsFromMetrics(metrics) # { int(<hid>): { name: "<hn>", proxy: "<pxy>" }}
 
         # Get key name eg 'graphite' from 'graphite[....]'
         self.key = metrics[0]['key_'][0:metrics[0]['key_'].find('[')]
@@ -206,7 +265,8 @@ class G2ZProxy(object):
                 metric_pattern = '{h}.'+metric_pattern
             host = hosts[ int(m['hostid']) ]
             return {
-                'host': host,
+                'host': host['name'],
+                'proxy': host['proxy'],
                 'metric': metric,
                 'metric_pattern': metric_pattern
             }
@@ -306,8 +366,8 @@ class G2ZProxy(object):
         for m in self.metrics:
             if 'value' in m:
                 metric = '{0}[{1}]'.format(self.key, m['metric'])
-                # self.json_sorter.add_metric_for(m['host'], metric, m['value'])
-                msg.append( ZabbixMetric(m['host'], metric, m['value'], m['time']) )
+                self.proxy_sorter.add_metric(m, metric, m['value'], m['time'])
+                # msg.append( ZabbixMetric(m['host'], metric, m['value'], m['time']) )
                 if self.debug_mode:
                     print('DEBUG: ({t}) {met} for {h} is {v}\n'.format( met=m['metric'], h=m['host'], v=m['value'], t=m['time'] ))
 
@@ -315,10 +375,10 @@ class G2ZProxy(object):
             print('DEBUG: number of metrics is {}'.format(len(self.metrics)))
             self._debugOutput(msg)
         else:
-            # ZabbixSender(use_config=True).send(msg) # can't use config here, it doesn't look at agent2.conf
-            # result = ZabbixSender(**self.zabbix_sender_config).send(self.json_sorter.get_all_metrics()) # we can configure this from the cmdline
-            result = ZabbixSender(**self.zabbix_sender_config).send(msg)
-            logger.debug("{cn}:_main: Sender result: {r}".format(cn=self.__class__.__name__, r=result))
+            for proxy in self.proxy_sorter.get_proxies():
+                #  TODO --- need dynamic sender config, to reflect changing proxy addresses
+                result = ZabbixSender(**(self.zabbix_sender_config({'zabbix_server':proxy}))).send(self.proxy_sorter.get_metrics_for(proxy))
+                logger.debug("{cn}:_main: Sending to {p} result: {r}".format(p=proxy, cn=self.__class__.__name__, r=result))
 
 if __name__ == '__main__':
 
