@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 ### Dependencies: urllib, py-zabbix, yaml, json
 
@@ -21,9 +21,7 @@ except:
     exit()
 
 try:
-    # from zabbix.api import ZabbixAPI
     from pyzabbix.api import ZabbixAPI
-    # from zabbix.sender import ZabbixSender, ZabbixMetric
     from pyzabbix.sender import ZabbixSender, ZabbixMetric
 except:
     print("Zabbix module py-zabbix is required.")
@@ -118,6 +116,7 @@ class MetricsSorterByProxy(collections.abc.Mapping):
     def __getitem__(self, proxy):
         return self.data[proxy]
 
+    # in case you switch from one kind of sorter to another it's nice to know what's broken
     def __not_imp_error(self):
         funcname = sys._getframe(1).f_code.co_name
         raise NotImplementedError('{} is not implemented by {}'.format(funcname, self.__class__.__name__))
@@ -131,17 +130,20 @@ class MetricsSorterByProxy(collections.abc.Mapping):
     def get_zabbix_metric_key(self, host, keyname, value):
         self.__not_imp_error()
 
-
+    # add a metric: pass in the metric dict, and the keyname, value, and time for the metric
+    #   we use the 'host' and 'proxy' keys from the metric dict to ensure it goes to the right place
     def add_metric(self, metric, keyname, value, time):
         if metric['proxy'] not in self.data:
             self.data[ metric['proxy'] ] = []
         self.data[ metric['proxy'] ].append( ZabbixMetric(metric['host'], keyname, value, time) )
 
+    # get the list of metrics going to a particular proxy
     def get_metrics_for(self, proxy):
         return self.data[proxy]
 
+    # get the list of proxies which have metrics to send
     def get_proxies(self):
-        return list(self.keys())
+        return list(self.data.keys())
 
 
 class G2ZProxyException(Exception):
@@ -190,11 +192,11 @@ class G2ZProxy(object):
         self._main()
 
     def _debugOutput(self, msg):
-        logger.debug("{0}: outputting datastructure instead of sending to Zabbix".format(self.__class__.__name__))
+        print("{0}: outputting datastructure instead of sending to Zabbix".format(self.__class__.__name__))
         if len(msg) == 0:
-            logger.debug(pprint.pformat(self.proxy_sorter))
+            pprint.pprint(self.proxy_sorter)
         else:
-            logger.debug(pprint.pformat(msg))
+            pprint.pprint(msg)
 
     def _getHostsFromMetrics(self, metrics):
         """
@@ -325,7 +327,7 @@ class G2ZProxy(object):
                 e_time = time.time() - s_time
                 # Convert to milliseconds
                 e_time = int(e_time * 1000)
-                logger.debug("{cn}:_getGraphiteData(): urlopen time {time}ms for {url}".format(cn=self.__class__.__name__, time=e_time, url=url))
+                logger.debug("{cn}:_getGraphiteData(): urlopen time {time}ms".format(cn=self.__class__.__name__, time=e_time))
 
             logger.debug("{0}:_getGraphiteData(): data:{1}\n".format(self.__class__.__name__, data))
             # Process data if it not empty

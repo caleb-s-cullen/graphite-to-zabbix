@@ -1,7 +1,23 @@
 # Graphite to Zabbix proxy
-This tool allow handle alerts based on graphite metrics. It works as a proxy between graphite and zabbix. It use graphite as data source and zabbix as an alerting system.
+This tool allows Zabbix to handle alerts based on Graphite metrics. It works as a proxy between Graphite and Zabbix. It uses Graphite as the data source and Zabbix as an alerting system.
 
-Basic idea is schedule cronjob to run script, that makes request to zabbix server, gets filtered list of monitored metrics, makes appropriate requests to graphite, and sends metric back to zabbix.
+The basic idea is to schedule cronjob to run the script.  It makes some requests of the Zabbix API on the server, to get filtered list of monitored metrics, their hosts and those hosts' proxies.  Then it formulates and sends the appropriate requests to Graphite before repackaging and sending the metrics back to Zabbix.
+
+This version is a modified version of the original g2zproxy by Alexey Dubkov (?) at https://github.com/adubkov/graphite-to-zabbix/blob/master/g2zproxy
+
+I (ccullen@easydns.com) have modified it in the following ways:
+
+0. I have updated the script to modern recommended syntax for `pyzabbix` library import, and otherwise updated the script for Python 3.  It is no longer reverse-compatible to Python 2.
+0. I have changed the logging code to use rsyslog, on facility `local0`.  There is a comment nearby to enable basic logging to `stdout` once again, but that seems a weird choice for a cronjob.
+1. It is now possible to tell the program to strip the hostname (coming from Zabbix, from the API call) down to only the first dot-separated token.  It would be trivial to adjust this to accept a number of starting tokens to keep.  To get this functionality, use the `-n` option.
+2. The Graphite metric key was previously required to start with the hostname.  This is still the default behavior, but if the Zabbix metric key contains the string "{h}" then it will parsed with `.format(h=hostname)` where `hostname` has had the transformation described in (1) applied.  This allows for extraction of metrics which are not organized with their host at the top of the hierarchy, e.g. `srv.{h}.cpu.cpu_count`
+3. Two different classes have been added, to assist in organizing information in different ways.
+   a.  The JSONMetricsSorter class is designed to accumulate metrics for a bunch of different hosts, and then spit those metrics out into a single JSON payload.  This may have future uses, but I am not sure how well a string containing both `[]` and `{}` functions as a key in a JSON dict. That said, some simple logic would allow for the metric keys to be munged in a predictable way; perhaps everything after the `{h}`, inside the `[]`.  This of course requires the use of a "raw" text trapper item and one or more dependent items, in Zabbix.
+   b.  The MetricsSorterByProxy class accumulates metrics into buckets (lists) organized by the name/address of the proxy to which they must go, based on information discovered via API.  Please note, this was developed against Zabbix 5.0 -- if you are using an earlier version, the API call involved may need some adjustment.
+
+In its current state, the script accesses Zabbix to find a list of the metrics which are configured to come from graphite, i.e. their keys start with `graphite[`.  It figures out what the proxy is for each host, and gets the metrics, and then sends a payload to each proxy with data meant for its hosts.  It doesn't need to read the Zabbix config file or be told what server to use, to be able to do this -- except that it needs to know the address of the API server of course.
+
+If the `-zs` option is used, that will override any information obtained about what proxies the data should go to.
 
 ## How to install
 Easiest way to install g2zproxy over pip:
